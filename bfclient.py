@@ -8,12 +8,24 @@ import signal
 import socket
 import sys
 
+
+def prompt():
+    sys.stdout.write("> ")
+    sys.stdout.flush()
+
+
+def quit(signum, frame):
+    print
+    exit(0)
+
+
 def advertise(signum, frame):
     advertisement = datagram.pack(local_addr, local_port, "UPDATE", routes)
     for link in neighbors:
         neighbors[link].send(advertisement)
 
 if __name__ == "__main__":
+    signal.signal(signal.SIGINT, quit)
 
     if len(sys.argv) < 6 or len(sys.argv) % 3 != 0:
         exit("usage: ./bfclient.py localport timeout [ipaddress1 port1 weight1 ...]")
@@ -51,6 +63,7 @@ if __name__ == "__main__":
     signal.alarm(timeout)
     signal.signal(signal.SIGALRM, advertise)
 
+    prompt()
     while True:
         try:
             ready, spam, eggs = select.select([in_sock, sys.stdin], [], [], timeout)
@@ -78,12 +91,17 @@ if __name__ == "__main__":
                                             advertise(0,0)
                                             signal.alarm(timeout)
                     else:
-                        # handle new command
-                        pass
+                        command = sys.stdin.readline().strip().upper()
+                        if command == "SHOWRT":
+                            for row in routes:
+                                print(routes[row])
+                        elif command == "CLOSE":
+                            quit(0,0)
+                        else:
+                            print("ERROR: unrecognized command.")
+                        prompt()
+
+
         except select.error:
             advertise(0,0)
             signal.alarm(timeout)
-
-        print "Routing table:"
-        for row in routes:
-            print routes[row]
