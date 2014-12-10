@@ -118,6 +118,10 @@ if __name__ == "__main__":
                                                     routes[recv_source] = new_route
                                                     table_changed = True
 
+                                            # Link change
+                                            if neighbor_table[destination] != neighbors[recv_source]:
+                                                neighbors[recv_source].distance = neighbor_table[destination]
+
                                             # Link better than other route?
                                             if neighbor_table[destination] < routes[recv_source].distance:
                                                 routes[recv_source].distance = neighbor_table[destination]
@@ -217,5 +221,6 @@ if __name__ == "__main__":
             time_since = datetime.datetime.now() - last_seen[host]
             if time_since.total_seconds() > 3 * timeout:
                 if host in neighbors:
-                    neighbors[host].distance = sys.maxint
-                    routes[host].distance = sys.maxint
+                    neighbors[host].distance = float("inf")
+                    routes[host].distance = float("inf")
+            advertise(0,0)
