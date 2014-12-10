@@ -98,6 +98,7 @@ if __name__ == "__main__":
                                 last_seen[recv_source] = datetime.datetime.now()
 
                                 # ROUTE UPDATE
+                                table_changed = False
                                 if command == "UPDATE":
                                     neighbor_table = datagram.dictionary(data)
                                     for destination in neighbor_table:
@@ -115,14 +116,13 @@ if __name__ == "__main__":
                                                     new_route = Route(recv_source, neighbor_table[destination],
                                                                   neighbors[recv_source])
                                                     routes[recv_source] = new_route
+                                                    table_changed = True
 
-                                            # Link change (always assume received version is right)
-                                            if neighbor_table[destination] != neighbors[recv_source].distance:
-                                                diff = neighbor_table[destination] - neighbors[recv_source].distance
-                                                neighbors[recv_source].distance += diff
-                                                for host in routes:
-                                                    if routes[host].link.id == recv_source:
-                                                        routes[recv_source].distance += neighbor_table[destination]
+                                            # Link better than other route?
+                                            if neighbor_table[destination] < routes[recv_source].distance:
+                                                routes[recv_source].distance = neighbor_table[destination]
+                                                routes[recv_source].link = neighbors[recv_source]
+                                                table_changed = True
 
                                         else:
                                             total_distance = neighbors[recv_source].distance + neighbor_table[destination]
@@ -134,14 +134,17 @@ if __name__ == "__main__":
                                                                       recv_source].distance,
                                                                   neighbors[recv_source])
                                                 routes[destination] = new_route
-                                                advertise(0, 0)
+                                                table_changed = True
 
                                             # Better route, or change in current one
                                             elif routes[destination].link.id == recv_source and routes[destination].distance != total_distance \
                                                     or routes[destination].distance > total_distance:
                                                 routes[destination].distance = total_distance
                                                 routes[destination].link = neighbors[recv_source]
-                                                advertise(0, 0)
+                                                table_changed = True
+
+                                    if table_changed:
+                                        advertise(0,0)
 
                                 elif command == "LINKDOWN":
                                     neighbors[recv_source].distance = float("inf")
