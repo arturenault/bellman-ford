@@ -1,8 +1,8 @@
 import datetime
 
 
-def pack(ip, port, command, table=None):
-    message = ip + ":" + str(port) + "\n" + \
+def pack(destination, command, table=None):
+    message = destination + "\n" + \
               str(datetime.datetime.now()) + "\n" + \
               command + "\n"
     for row in table:
@@ -18,9 +18,10 @@ def unpack(message):
     data = contents[3]
     return source, time, command, data
 
+
 def dictionary(text):
     output = dict()
     for line in text.splitlines():
         key, space, value = line.partition(" ")
-        output[key]= int(value)
+        output[key] = int(value)
     return output

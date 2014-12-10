@@ -20,9 +20,11 @@ def quit(signum, frame):
 
 
 def advertise(signum, frame):
-    advertisement = datagram.pack(local_addr, local_port, "UPDATE", routes)
+    advertisement = datagram.pack(here, "UPDATE", routes)
+    print advertisement
     for link in neighbors:
         neighbors[link].send(advertisement)
+
 
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, quit)
@@ -51,15 +53,16 @@ if __name__ == "__main__":
         new_ip = socket.gethostbyname(new_host)
         new_port = sys.argv[i + 1]
         new_distance = sys.argv[i + 2]
+        new_addr = new_ip + ":" + new_port
 
-        new_link = Link(new_ip, new_port, new_distance)
-        new_route = Route(new_ip, new_port, new_distance, new_link)
+        new_link = Link(new_addr, new_distance)
+        new_route = Route(new_addr, new_distance, new_link)
 
         neighbors[new_link.id] = new_link
         routes[new_route.id] = new_route
         last_seen[new_route.id] = datetime.datetime.now()
 
-    advertise(0,0)
+    advertise(0, 0)
     signal.alarm(timeout)
     signal.signal(signal.SIGALRM, advertise)
 
@@ -72,23 +75,41 @@ if __name__ == "__main__":
                     if source is in_sock:
                         received, ham = source.recvfrom(4096)
                         recv_source, recv_time, command, data = datagram.unpack(received)
-                        if recv_time > last_seen[recv_source]:
+                        if recv_source not in last_seen or recv_time > last_seen[recv_source]:
+                            last_seen[recv_source] = datetime.datetime.now()
                             if command == "UPDATE":
-                                last_seen[recv_source] = datetime.datetime.now()
                                 neighbor_table = datagram.dictionary(data)
                                 for destination in neighbor_table:
-                                    if destination != here:
+                                    if destination == here:
+                                        if recv_source not in neighbors:
+                                            new_link = Link(recv_source, neighbor_table[destination])
+                                            neighbors[recv_source] = new_link
+
+                                        if recv_source not in routes:
+                                            new_route = Route(recv_source, neighbor_table[destination],
+                                                              neighbors[recv_source])
+                                            routes[recv_source] = new_route
+
+                                        elif neighbor_table[destination] < routes[recv_source].distance:
+                                            routes[recv_source].distance = neighbor_table[destination]
+                                            routes[recv_source].link = neighbors[recv_source]
+
+                                    else:
                                         if destination not in routes:
-                                            new_ip, colon, new_port = destination.partition(":")
-                                            routes[destination] = Route(new_ip, new_port,
-                                                                        neighbor_table[destination] + neighbors[recv_source].distance,
+                                            routes[destination] = Route(destination,
+                                                                        neighbor_table[destination] + neighbors[
+                                                                            recv_source].distance,
                                                                         neighbors[recv_source])
-                                            advertise(0,0)
+                                            advertise(0, 0)
                                             signal.alarm(timeout)
-                                        elif routes[destination] > neighbor_table[destination] + neighbors[recv_source].distance:
-                                            routes[destination].distance = neighbor_table[destination] + neighbors[recv_source].distance
+                                        elif routes[destination].link is neighbors[recv_source] and routes[
+                                            destination].distance != neighbor_table[destination] \
+                                                or routes[destination] > neighbor_table[destination] + neighbors[
+                                                    recv_source].distance:
+                                            routes[destination].distance = neighbor_table[destination] + neighbors[
+                                                recv_source].distance
                                             routes[destination].link = neighbors[recv_source]
-                                            advertise(0,0)
+                                            advertise(0, 0)
                                             signal.alarm(timeout)
                     else:
                         command = sys.stdin.readline().strip().upper()
@@ -96,12 +117,19 @@ if __name__ == "__main__":
                             for row in routes:
                                 print(routes[row])
                         elif command == "CLOSE":
-                            quit(0,0)
+                            quit(0, 0)
                         else:
                             print("ERROR: unrecognized command.")
                         prompt()
 
 
         except select.error:
-            advertise(0,0)
+            advertise(0, 0)
             signal.alarm(timeout)
+
+        for host in last_seen:
+            time_since = datetime.datetime.now() - last_seen[host]
+            if time_since.total_seconds() > 3 * timeout:
+                if host in neighbors:
+                    neighbors[host].distance = sys.maxint
+                    routes[host].distance = sys.maxint
