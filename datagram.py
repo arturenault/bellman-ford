@@ -3,10 +3,11 @@ import datetime
 
 def pack(destination, command, table=None):
     message = destination + "\n" + \
-              str(datetime.datetime.now()) + "\n" + \
+              str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')) + "\n" + \
               command + "\n"
-    for row in table:
-        message += row + " " + str(table[row].distance) + "\n"
+    if table:
+        for row in table:
+            message += row + " " + str(table[row].distance) + "\n"
     return message
 
 

@@ -21,9 +21,10 @@ def quit(signum, frame):
 
 def advertise(signum, frame):
     advertisement = datagram.pack(here, "UPDATE", routes)
-    print advertisement
     for link in neighbors:
         neighbors[link].send(advertisement)
+    signal.alarm(timeout)
+    signal.signal(signal.SIGALRM, advertise)
 
 
 if __name__ == "__main__":
@@ -42,6 +43,7 @@ if __name__ == "__main__":
     in_sock.bind(("", local_port))
 
     neighbors = dict()
+    original_links = dict()
     routes = dict()
     last_seen = dict()
 
@@ -59,12 +61,12 @@ if __name__ == "__main__":
         new_route = Route(new_addr, new_distance, new_link)
 
         neighbors[new_link.id] = new_link
+        original_links[new_addr] = new_link.distance
         routes[new_route.id] = new_route
         last_seen[new_route.id] = datetime.datetime.now()
 
+
     advertise(0, 0)
-    signal.alarm(timeout)
-    signal.signal(signal.SIGALRM, advertise)
 
     prompt()
     while True:
@@ -84,13 +86,14 @@ if __name__ == "__main__":
                                         if recv_source not in neighbors:
                                             new_link = Link(recv_source, neighbor_table[destination])
                                             neighbors[recv_source] = new_link
+                                            original_links[recv_source] = new_link.distance
 
                                         if recv_source not in routes:
                                             new_route = Route(recv_source, neighbor_table[destination],
                                                               neighbors[recv_source])
                                             routes[recv_source] = new_route
 
-                                        elif neighbor_table[destination] < routes[recv_source].distance:
+                                        elif neighbor_table[destination] != routes[recv_source].distance:
                                             routes[recv_source].distance = neighbor_table[destination]
                                             routes[recv_source].link = neighbors[recv_source]
 
@@ -101,7 +104,6 @@ if __name__ == "__main__":
                                                                             recv_source].distance,
                                                                         neighbors[recv_source])
                                             advertise(0, 0)
-                                            signal.alarm(timeout)
                                         elif routes[destination].link is neighbors[recv_source] and routes[
                                             destination].distance != neighbor_table[destination] \
                                                 or routes[destination] > neighbor_table[destination] + neighbors[
@@ -110,22 +112,58 @@ if __name__ == "__main__":
                                                 recv_source].distance
                                             routes[destination].link = neighbors[recv_source]
                                             advertise(0, 0)
-                                            signal.alarm(timeout)
+                            elif command == "LINKDOWN":
+                                neighbors[recv_source].distance = sys.maxint
+                                for destination in routes:
+                                    if routes[destination].link.id == down_id:
+                                        routes[destination].distance = sys.maxint
+                                advertise(0,0)
+                            elif command =="LINKUP":
+                                neighbors[recv_source].distance = original_links[recv_source].distance
+                                routes[recv_source].distance = original_links[recv_source].distance
+
+
                     else:
-                        command = sys.stdin.readline().strip().upper()
+                        args = sys.stdin.readline().strip().split(" ")
+                        command = args[0].upper()
                         if command == "SHOWRT":
                             for row in routes:
                                 print(routes[row])
+                        elif command == "LINKDOWN":
+                            try:
+                                if args[1] == "localhost" or args[1] == "127.0.0.1":
+                                    down_addr = socket.gethostname()
+                                else:
+                                    down_addr = args[1]
+                                down_id = socket.gethostbyname(down_addr) + ":" + args[2]
+                                down_message = datagram.pack(down_id, "LINKDOWN")
+                                neighbors[down_id].distance = sys.maxint
+                                last_seen[down_id] = datetime.datetime.now()
+                                for destination in routes:
+                                    if routes[destination].link.id == down_id:
+                                        routes[destination].distance = sys.maxint
+                                advertise(0,0)
+
+                            except IndexError:
+                                print("ERROR: command format incorrect.")
+                            except KeyError:
+                                print("ERROR: link does not exist.")
+                        elif command == "LINKUP":
+                            try:
+                                up_id = args[1] + ":" + args[2]
+                                neighbors[up_id].distance = original_links[up_id]
+                            except IndexError:
+                                print("ERROR: command format incorrect.")
+                            except KeyError:
+                                print("ERROR: link does not exist.")
                         elif command == "CLOSE":
                             quit(0, 0)
                         else:
                             print("ERROR: unrecognized command.")
                         prompt()
 
-
         except select.error:
             advertise(0, 0)
-            signal.alarm(timeout)
 
         for host in last_seen:
             time_since = datetime.datetime.now() - last_seen[host]
