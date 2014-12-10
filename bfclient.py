@@ -30,7 +30,6 @@ if __name__ == "__main__":
     neighbors = dict()
     routes = dict()
     last_seen = dict()
-    neighbor_routes = dict()
 
     for i in range(3, len(sys.argv), 3):
         if sys.argv[i] == "localhost" or sys.argv[i] == "127.0.0.1":
@@ -47,7 +46,6 @@ if __name__ == "__main__":
         neighbors[new_link.id] = new_link
         routes[new_route.id] = new_route
         last_seen[new_route.id] = datetime.datetime.now()
-        neighbor_routes[new_route.id] = dict()
 
     advertise(0,0)
     signal.alarm(timeout)
@@ -61,28 +59,30 @@ if __name__ == "__main__":
                     if source is in_sock:
                         received, ham = source.recvfrom(4096)
                         recv_source, recv_time, command, data = datagram.unpack(received)
-                        if command == "UPDATE" and recv_time > last_seen[recv_source]:
-                            last_seen[recv_source] = datetime.datetime.now()
-                            neighbor_routes[recv_source] = datagram.dictionary(data)
-                            for destination in neighbor_routes[recv_source]:
-                                if destination != here:
-                                    if destination not in routes:
-                                        new_ip, colon, new_port = destination.partition(":")
-                                        routes[destination] = Route(new_ip, new_port,
-                                                                    neighbor_routes[recv_source][destination] + neighbors[recv_source].distance,
-                                                                    neighbors[recv_source])
-                                        advertise(0,0)
-                                        signal.alarm(timeout)
-                                    elif routes[destination] > neighbor_routes[recv_source][destination] + neighbors[recv_source].distance:
-                                        routes[destination].distance = neighbor_routes[recv_source][destination] + neighbors[recv_source].distance
-                                        routes[destination].link = neighbors[recv_source]
-                                        advertise(0,0)
-                                        signal.alarm(timeout)
+                        if recv_time > last_seen[recv_source]:
+                            if command == "UPDATE":
+                                last_seen[recv_source] = datetime.datetime.now()
+                                neighbor_table = datagram.dictionary(data)
+                                for destination in neighbor_table:
+                                    if destination != here:
+                                        if destination not in routes:
+                                            new_ip, colon, new_port = destination.partition(":")
+                                            routes[destination] = Route(new_ip, new_port,
+                                                                        neighbor_table[destination] + neighbors[recv_source].distance,
+                                                                        neighbors[recv_source])
+                                            advertise(0,0)
+                                            signal.alarm(timeout)
+                                        elif routes[destination] > neighbor_table[destination] + neighbors[recv_source].distance:
+                                            routes[destination].distance = neighbor_table[destination] + neighbors[recv_source].distance
+                                            routes[destination].link = neighbors[recv_source]
+                                            advertise(0,0)
+                                            signal.alarm(timeout)
                     else:
                         # handle new command
                         pass
         except select.error:
             advertise(0,0)
+            signal.alarm(timeout)
 
         print "Routing table:"
         for row in routes:
