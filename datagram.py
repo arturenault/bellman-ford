@@ -7,7 +7,7 @@ def pack(destination, command, table=None):
               command + "\n"
     if table:
         for row in table:
-            message += row + " " + str(table[row].distance) + " " + table[row].link.id + "\n"
+            message += row + " " + str(table[row].distance) + "\n"
     return message + "END\n"
 
 
@@ -26,5 +26,4 @@ def dictionary(text):
     for line in text.splitlines():
         array = line.split(" ")
         distances[array[0]] = float(array[1])
-        links[array[0]] = array[2]
-    return distances, links
+    return distances

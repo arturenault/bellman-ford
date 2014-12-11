@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import copy
 import datetime
 import datagram
 from network import Link, Route
@@ -23,9 +24,13 @@ def quit(signum, frame):
 
 # Advertises routing table to other nodes
 def advertise(signum, frame):
-    advertisement = datagram.pack(here, "UPDATE", routes)
     for link in neighbors:
         if neighbors[link].distance < float("inf"):
+            poisoned_routes = copy.deepcopy(routes)
+            for host in routes:
+                if routes[host].link.id == link and host != link:
+                    poisoned_routes[host].distance = float("inf")
+            advertisement = datagram.pack(here, "UPDATE", poisoned_routes)
             neighbors[link].send(advertisement)
     signal.alarm(timeout)  # timeout handled by alarm.
     # This way user input won't reset the timeout.
@@ -97,30 +102,26 @@ if __name__ == "__main__":
                             if recv_source not in last_seen or last_seen[recv_source] < recv_time:
                                 last_seen[recv_source] = datetime.datetime.now()
                                 table_changed = False
+                                if data:
+                                    neighbor_distances = datagram.dictionary(data)
+                                if recv_source not in neighbors:
+                                    new_link = Link(recv_source, neighbor_distances[destination])
+                                    neighbors[recv_source] = new_link
+                                    original_links[recv_source] = new_link.distance
+
+                                    if recv_source not in routes:
+                                        new_route = Route(recv_source, neighbor_distances[destination],
+                                                  neighbors[recv_source])
+                                        routes[recv_source] = new_route
+                                        table_changed = True
 
                                 # ROUTE UPDATE
                                 if command == "UPDATE":
-                                    neighbor_distances, neighbor_links = datagram.dictionary(data)
-
-                                    if recv_source not in neighbors:
-                                        new_link = Link(recv_source, neighbor_distances[destination])
-                                        neighbors[recv_source] = new_link
-                                        original_links[recv_source] = new_link.distance
-
-                                        if recv_source not in routes:
-                                            new_route = Route(recv_source, neighbor_distances[destination],
-                                                              neighbors[recv_source])
-                                            routes[recv_source] = new_route
-                                            table_changed = True
 
                                     for destination in neighbor_distances:
 
                                         # Refers to current link
                                         if destination == here:
-
-                                            # Link change
-                                            if neighbor_distances[destination] != neighbors[recv_source]:
-                                                neighbors[recv_source].distance = neighbor_distances[destination]
 
                                             # Link better than other route?
                                             if neighbor_distances[destination] < routes[recv_source].distance:
@@ -141,12 +142,11 @@ if __name__ == "__main__":
                                                 table_changed = True
 
                                             # Change in current route
-                                            elif routes[destination].link.id == recv_source and routes[
-                                                destination].distance != total_distance:
+                                            elif routes[destination].link.id == recv_source and routes[destination].distance != total_distance:
                                                 routes[destination].distance = total_distance
                                                 table_changed = True
 
-                                            elif routes[destination].distance > total_distance and neighbor_links[destination] != here:
+                                            elif routes[destination].distance > total_distance:# and neighbor_links[destination] != here:
                                                 routes[destination].distance = total_distance
                                                 routes[destination].link = neighbors[recv_source]
                                                 table_changed = True
@@ -222,12 +222,14 @@ if __name__ == "__main__":
         for link in last_seen:
             time_since = datetime.datetime.now() - last_seen[link]
             if time_since.total_seconds() > 3 * timeout:
-                if link in neighbors and neighbors[link].distance != float("inf"):
-                    table_changed = True
+                if neighbors[link].distance != float("inf"):
                     neighbors[link].distance = float("inf")
-                    routes[link].distance = float("inf")
                     for host in routes:
                         if routes[host].link.id == link:
+                            table_changed = True
                             routes[host].distance = float("inf")
+
         if table_changed:
+            for host in routes:
+                print routes[host]
             advertise(0, 0)
