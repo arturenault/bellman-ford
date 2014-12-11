@@ -27,8 +27,8 @@ def advertise(signum, frame):
     for link in neighbors:
         if neighbors[link].distance < float("inf"):
             neighbors[link].send(advertisement)
-    signal.alarm(timeout) # timeout handled by alarm.
-                          # This way user input won't reset the timeout.
+    signal.alarm(timeout)  # timeout handled by alarm.
+    # This way user input won't reset the timeout.
     signal.signal(signal.SIGALRM, advertise)
 
 
@@ -96,73 +96,74 @@ if __name__ == "__main__":
                             # Disregard out-of-order packets
                             if recv_source not in last_seen or last_seen[recv_source] < recv_time:
                                 last_seen[recv_source] = datetime.datetime.now()
+                                table_changed = False
 
                                 # ROUTE UPDATE
-                                table_changed = False
                                 if command == "UPDATE":
-                                    neighbor_table = datagram.dictionary(data)
-                                    for destination in neighbor_table:
+                                    neighbor_distances, neighbor_links = datagram.dictionary(data)
+
+                                    if recv_source not in neighbors:
+                                        new_link = Link(recv_source, neighbor_distances[destination])
+                                        neighbors[recv_source] = new_link
+                                        original_links[recv_source] = new_link.distance
+
+                                        if recv_source not in routes:
+                                            new_route = Route(recv_source, neighbor_distances[destination],
+                                                              neighbors[recv_source])
+                                            routes[recv_source] = new_route
+                                            table_changed = True
+
+                                    for destination in neighbor_distances:
 
                                         # Refers to current link
                                         if destination == here:
 
-                                            # New link
-                                            if recv_source not in neighbors:
-                                                new_link = Link(recv_source, neighbor_table[destination])
-                                                neighbors[recv_source] = new_link
-                                                original_links[recv_source] = new_link.distance
-
-                                                if recv_source not in routes:
-                                                    new_route = Route(recv_source, neighbor_table[destination],
-                                                                  neighbors[recv_source])
-                                                    routes[recv_source] = new_route
-                                                    table_changed = True
-
                                             # Link change
-                                            if neighbor_table[destination] != neighbors[recv_source]:
-                                                neighbors[recv_source].distance = neighbor_table[destination]
+                                            if neighbor_distances[destination] != neighbors[recv_source]:
+                                                neighbors[recv_source].distance = neighbor_distances[destination]
 
                                             # Link better than other route?
-                                            if neighbor_table[destination] < routes[recv_source].distance:
-                                                routes[recv_source].distance = neighbor_table[destination]
+                                            if neighbor_distances[destination] < routes[recv_source].distance:
+                                                routes[recv_source].distance = neighbor_distances[destination]
                                                 routes[recv_source].link = neighbors[recv_source]
                                                 table_changed = True
 
                                         else:
-                                            total_distance = neighbors[recv_source].distance + neighbor_table[destination]
+                                            total_distance = neighbors[recv_source].distance + neighbor_distances[
+                                                destination]
 
                                             # New route
                                             if destination not in routes:
                                                 new_route = Route(destination,
-                                                                  neighbor_table[destination] + neighbors[
-                                                                      recv_source].distance,
+                                                                  total_distance,
                                                                   neighbors[recv_source])
                                                 routes[destination] = new_route
                                                 table_changed = True
 
-                                            # Better route, or change in current one
-                                            elif routes[destination].link.id == recv_source and routes[destination].distance != total_distance \
-                                                    or routes[destination].distance > total_distance:
+                                            # Change in current route
+                                            elif routes[destination].link.id == recv_source and routes[
+                                                destination].distance != total_distance:
+                                                routes[destination].distance = total_distance
+                                                table_changed = True
+
+                                            elif routes[destination].distance > total_distance and neighbor_links[destination] != here:
                                                 routes[destination].distance = total_distance
                                                 routes[destination].link = neighbors[recv_source]
                                                 table_changed = True
-
-                                    if table_changed:
-                                        advertise(0,0)
 
                                 elif command == "LINKDOWN":
                                     neighbors[recv_source].distance = float("inf")
                                     for destination in routes:
                                         if routes[destination].link.id == recv_source:
                                             routes[destination].distance = float("inf")
-                                    advertise(0, 0)
+                                    table_changed = True
                                 elif command == "LINKUP":
                                     neighbors[recv_source].distance = original_links[recv_source]
                                     routes[recv_source].distance = original_links[recv_source]
-                                    for i in routes:
-                                        print i + " -> " + str(routes[i].distance)
-                                    advertise(0, 0)
+                                    table_changed = True
 
+                                if table_changed:
+                                    advertise(0,0)
                     else:
                         args = sys.stdin.readline().strip().split(" ")
                         command = args[0].upper()
@@ -217,10 +218,16 @@ if __name__ == "__main__":
             # If timeout happens while select is waiting
             advertise(0, 0)
 
-        for host in last_seen:
-            time_since = datetime.datetime.now() - last_seen[host]
+        table_changed = False
+        for link in last_seen:
+            time_since = datetime.datetime.now() - last_seen[link]
             if time_since.total_seconds() > 3 * timeout:
-                if host in neighbors:
-                    neighbors[host].distance = float("inf")
-                    routes[host].distance = float("inf")
-            advertise(0,0)
+                if link in neighbors and neighbors[link].distance != float("inf"):
+                    table_changed = True
+                    neighbors[link].distance = float("inf")
+                    routes[link].distance = float("inf")
+                    for host in routes:
+                        if routes[host].link.id == link:
+                            routes[host].distance = float("inf")
+        if table_changed:
+            advertise(0, 0)

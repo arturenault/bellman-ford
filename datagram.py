@@ -7,8 +7,8 @@ def pack(destination, command, table=None):
               command + "\n"
     if table:
         for row in table:
-            message += row + " " + str(table[row].distance) + "\n"
-    return message
+            message += row + " " + str(table[row].distance) + " " + table[row].link.id + "\n"
+    return message + "END\n"
 
 
 def unpack(message):
@@ -21,8 +21,10 @@ def unpack(message):
 
 
 def dictionary(text):
-    output = dict()
+    distances = dict()
+    links = dict()
     for line in text.splitlines():
-        key, space, value = line.partition(" ")
-        output[key] = int(value)
-    return output
+        array = line.split(" ")
+        distances[array[0]] = float(array[1])
+        links[array[0]] = array[2]
+    return distances, links

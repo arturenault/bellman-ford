@@ -1,3 +1,4 @@
+import datetime
 import socket
 import sys
 
@@ -7,13 +8,14 @@ class Destination:
         self.ip_address, colon, port_string = address.partition(":")
         self.port = int(port_string)
         self.id = address
-        self.distance = int(distance)
+        self.distance = float(distance)
 
 
 class Link(Destination):
     def __init__(self, address, distance):
         Destination.__init__(self, address, distance)
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.last_seen = datetime.datetime.now()
 
     def send(self, data):
         self.socket.sendto(data, (self.ip_address, self.port))
