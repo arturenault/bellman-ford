@@ -17,6 +17,7 @@ def prompt():
 
 # Function to exit gracefully
 def quit(signum, frame):
+    in_sock.close()
     print  # New line after ^C
     exit(0)
 
@@ -45,9 +46,12 @@ if __name__ == "__main__":
     timeout = int(sys.argv[2])
 
     # Prepare receiving socket
-    in_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    in_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    in_sock.bind(("", local_port))
+    try:
+        in_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        in_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        in_sock.bind(("", local_port))
+    except socket.error:
+        exit("ERROR: connection failed.")
 
     # Prepare data structures
     neighbors = dict()  # Neighboring links
@@ -103,12 +107,12 @@ if __name__ == "__main__":
                                     neighbor_distances, neighbor_links = datagram.dictionary(data)
 
                                     if recv_source not in neighbors:
-                                        new_link = Link(recv_source, neighbor_distances[destination])
+                                        new_link = Link(recv_source, neighbor_distances[here])
                                         neighbors[recv_source] = new_link
                                         original_links[recv_source] = new_link.distance
 
                                         if recv_source not in routes:
-                                            new_route = Route(recv_source, neighbor_distances[destination],
+                                            new_route = Route(recv_source, neighbor_distances[here],
                                                               neighbors[recv_source])
                                             routes[recv_source] = new_route
                                             table_changed = True
@@ -167,10 +171,19 @@ if __name__ == "__main__":
                     else:
                         args = sys.stdin.readline().strip().split(" ")
                         command = args[0].upper()
-                        if command == "SHOWRT":
+                        if command == "SHOWLINKS":
+                            # print links
+                            print("LINKS: (" + datetime.datetime.now().strftime("%H:%M:%S.%f")[:-4] + ")")
+                            for row in neighbors:
+                                if neighbors[row].distance < float("inf"):
+                                    print(str(neighbors[row]) + ", cost: " + str(neighbors[row].distance))
+                        elif command == "SHOWRT":
+                            # print routing table
+                            print("ROUTING TABLE: (" + datetime.datetime.now().strftime("%H:%M:%S.%f")[:-4] + ")")
                             for row in routes:
                                 print(routes[row])
                         elif command == "LINKDOWN":
+                            # send a linkdown message to the desired link
                             try:
                                 if args[1] == "localhost" or args[1] == "127.0.0.1":
                                     down_addr = socket.gethostname()
@@ -191,6 +204,7 @@ if __name__ == "__main__":
                             except KeyError:
                                 print("ERROR: link does not exist.")
                         elif command == "LINKUP":
+                            # restores a link that had been pulled down
                             try:
                                 if args[1] == "localhost" or args[1] == "127.0.0.1":
                                     up_addr = socket.gethostname()
@@ -208,6 +222,14 @@ if __name__ == "__main__":
                                 print("ERROR: command format incorrect.")
                             except KeyError:
                                 print("ERROR: link does not exist.")
+                        elif command == "HELP":
+                            print "Available commands:"
+                            print "SHOWLINKS: displays connected links"
+                            print "SHOWRT: displays routing table"
+                            print "LINKDOWN <ip> <port>: simulates link failure at the input address"
+                            print "LINKUP <ip> <port>: restores a previously destroyed link at the desired address."
+                            print "CLOSE exit the program, simulating node failure"
+                            print "HELP display this menu"
                         elif command == "CLOSE":
                             quit(0, 0)
                         else:
@@ -218,6 +240,7 @@ if __name__ == "__main__":
             # If timeout happens while select is waiting
             advertise(0, 0)
 
+        # Check for dead links
         table_changed = False
         for link in last_seen:
             time_since = datetime.datetime.now() - last_seen[link]
